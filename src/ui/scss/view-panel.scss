@@ -68,5 +68,37 @@
             width: 187px;
             margin: 0;
         }
+
+        & > .view-panel-row-vector {
+            width: 187px;
+            margin: 0;
+        }
+
+        & > .view-panel-row-number-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            width: 187px;
+            margin: 0;
+
+            & > .view-panel-row-button {
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+                margin: 0;
+                padding: 0;
+                line-height: 22px;
+                text-align: center;
+
+                &:hover {
+                    color: $clr-hilight;
+                }
+            }
+
+            & > .view-panel-row-number {
+                flex-grow: 1;
+                margin: 0;
+            }
+        }
     }
 }

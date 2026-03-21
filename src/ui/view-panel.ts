@@ -1,7 +1,8 @@
-import { BooleanInput, ColorPicker, Container, Label, SelectInput, SliderInput } from '@playcanvas/pcui';
+import { BooleanInput, Button, ColorPicker, Container, Label, NumericInput, SelectInput, SliderInput, VectorInput } from '@playcanvas/pcui';
 import { Color } from 'playcanvas';
 
 import { Events } from '../events';
+import { type FramingSettings } from '../framing';
 import { ShortcutManager } from '../shortcut-manager';
 import { localize } from './localization';
 import { Tooltips } from './tooltips';
@@ -134,6 +135,89 @@ class ViewPanel extends Container {
 
         tonemappingRow.append(tonemappingLabel);
         tonemappingRow.append(tonemappingSelection);
+
+        // show framing
+
+        const showFrameRow = new Container({
+            class: 'view-panel-row'
+        });
+
+        const showFrameLabel = new Label({
+            text: localize('panel.view-options.show-frame'),
+            class: 'view-panel-row-label'
+        });
+
+        const showFrameToggle = new BooleanInput({
+            type: 'toggle',
+            class: 'view-panel-row-toggle',
+            value: false
+        });
+
+        showFrameRow.append(showFrameLabel);
+        showFrameRow.append(showFrameToggle);
+
+        // framing resolution
+
+        const framingResolutionRow = new Container({
+            class: 'view-panel-row'
+        });
+
+        const framingResolutionLabel = new Label({
+            text: localize('panel.view-options.frame-resolution'),
+            class: 'view-panel-row-label'
+        });
+
+        const framingResolutionInput = new VectorInput({
+            class: 'view-panel-row-vector',
+            dimensions: 2,
+            min: 4,
+            max: 16000,
+            precision: 0,
+            value: [500, 500]
+        });
+
+        framingResolutionRow.append(framingResolutionLabel);
+        framingResolutionRow.append(framingResolutionInput);
+
+        // camera distance
+
+        const distanceRow = new Container({
+            class: 'view-panel-row'
+        });
+
+        const distanceLabel = new Label({
+            text: localize('panel.view-options.distance'),
+            class: 'view-panel-row-label'
+        });
+
+        const distanceControls = new Container({
+            class: 'view-panel-row-number-controls'
+        });
+
+        const distanceNearButton = new Button({
+            class: 'view-panel-row-button',
+            text: '-'
+        });
+
+        const distanceInput = new NumericInput({
+            class: 'view-panel-row-number',
+            min: 1e-4,
+            max: 1000000,
+            precision: 4,
+            value: 1
+        });
+
+        const distanceFarButton = new Button({
+            class: 'view-panel-row-button',
+            text: '+'
+        });
+
+        distanceControls.append(distanceNearButton);
+        distanceControls.append(distanceInput);
+        distanceControls.append(distanceFarButton);
+
+        distanceRow.append(distanceLabel);
+        distanceRow.append(distanceControls);
 
         // camera fov
 
@@ -324,6 +408,9 @@ class ViewPanel extends Container {
         this.append(header);
         this.append(clrRow);
         this.append(tonemappingRow);
+        this.append(showFrameRow);
+        this.append(framingResolutionRow);
+        this.append(distanceRow);
         this.append(fovRow);
         this.append(shBandsRow);
         this.append(cameraFlySpeedRow);
@@ -365,6 +452,69 @@ class ViewPanel extends Container {
 
         events.on('view.bands', (bands: number) => {
             shBandsSlider.value = bands;
+        });
+
+        // framing
+
+        let syncingFraming = false;
+        const setFramingControls = (framing: FramingSettings) => {
+            syncingFraming = true;
+            showFrameToggle.value = framing.enabled;
+            framingResolutionInput.value = [framing.width, framing.height];
+            syncingFraming = false;
+        };
+
+        events.on('view.framing', (framing: FramingSettings) => {
+            setFramingControls(framing);
+        });
+
+        showFrameToggle.on('change', (value: boolean) => {
+            if (!syncingFraming) {
+                events.fire('view.setFraming', { enabled: value });
+            }
+        });
+
+        framingResolutionInput.on('change', (value: number[]) => {
+            if (!syncingFraming) {
+                events.fire('view.setFraming', { width: value[0], height: value[1] });
+            }
+        });
+
+        // camera distance
+
+        let syncingDistance = false;
+        const setDistanceValue = (distance: number) => {
+            syncingDistance = true;
+            distanceInput.value = distance;
+            syncingDistance = false;
+        };
+
+        const adjustDistance = (direction: -1 | 1) => {
+            const currentDistance = (events.invoke('camera.distance') as number) ?? distanceInput.value ?? 1;
+            const distanceStep = Math.max(currentDistance * 0.1, 1e-3);
+            const nextDistance = direction < 0 ?
+                Math.max(1e-4, currentDistance - distanceStep) :
+                currentDistance + distanceStep;
+
+            events.fire('camera.setDistance', nextDistance);
+        };
+
+        events.on('camera.distance', (distance: number) => {
+            setDistanceValue(distance);
+        });
+
+        distanceInput.on('change', (value: number) => {
+            if (!syncingDistance) {
+                events.fire('camera.setDistance', value);
+            }
+        });
+
+        distanceNearButton.on('click', () => {
+            adjustDistance(-1);
+        });
+
+        distanceFarButton.on('click', () => {
+            adjustDistance(1);
         });
 
         shBandsSlider.on('change', (value: number) => {
@@ -488,6 +638,11 @@ class ViewPanel extends Container {
         tooltips.register(selectedClrPicker, localize('panel.view-options.selected-color'), 'top');
         tooltips.register(unselectedClrPicker, localize('panel.view-options.unselected-color'), 'top');
         tooltips.register(lockedClrPicker, localize('panel.view-options.locked-color'), 'top');
+        tooltips.register(showFrameLabel, localize('panel.view-options.show-frame'), 'left');
+        tooltips.register(framingResolutionLabel, localize('panel.view-options.frame-resolution'), 'left');
+        tooltips.register(distanceLabel, localize('panel.view-options.distance'), 'left');
+        tooltips.register(distanceNearButton, localize('panel.view-options.distance-near'), 'top');
+        tooltips.register(distanceFarButton, localize('panel.view-options.distance-far'), 'top');
     }
 }
 

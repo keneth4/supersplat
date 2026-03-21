@@ -294,6 +294,9 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 
             const model = await scene.assetLoader.load(filename, fileSystem, animationFrame);
             await scene.add(model);
+            if (!animationFrame) {
+                events.fire('camera.reset');
+            }
             return model;
         } catch (error) {
             const displayName = files[0]?.filename ?? 'unknown';

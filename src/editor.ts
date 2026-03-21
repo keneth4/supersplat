@@ -5,6 +5,7 @@ import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
 import { Element, ElementType } from './element';
 import { Events } from './events';
+import { defaultFramingSettings, type FramingSettings } from './framing';
 import { MappedReadFileSystem } from './io';
 import { Scene } from './scene';
 import { Splat } from './splat';
@@ -108,10 +109,15 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // camera.fov
 
+    const getCameraDistance = () => {
+        return scene.camera.distance * scene.camera.sceneRadius / scene.camera.fovFactor;
+    };
+
     const setCameraFov = (fov: number) => {
         if (fov !== scene.camera.fov) {
             scene.camera.fov = fov;
             events.fire('camera.fov', scene.camera.fov);
+            events.fire('camera.distance', getCameraDistance());
         }
     };
 
@@ -121,6 +127,54 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.setFov', (fov: number) => {
         setCameraFov(fov);
+    });
+
+    // camera.distance
+
+    events.function('camera.distance', () => {
+        return getCameraDistance();
+    });
+
+    events.on('camera.setDistance', (distance: number) => {
+        if (!isFinite(distance)) {
+            return;
+        }
+
+        const worldDistance = Math.max(1e-6, distance);
+        scene.camera.setDistance(worldDistance / scene.camera.sceneRadius * scene.camera.fovFactor);
+    });
+
+    // view.framing
+
+    let framing: FramingSettings = { ...defaultFramingSettings };
+
+    const setViewFraming = (value: Partial<FramingSettings>) => {
+        const width = Number.isFinite(value.width) ? Math.max(4, Math.round(value.width)) : framing.width;
+        const height = Number.isFinite(value.height) ? Math.max(4, Math.round(value.height)) : framing.height;
+        const nextFraming: FramingSettings = {
+            ...framing,
+            ...value,
+            width,
+            height
+        };
+
+        if (
+            nextFraming.enabled !== framing.enabled ||
+            nextFraming.width !== framing.width ||
+            nextFraming.height !== framing.height ||
+            nextFraming.dimOutside !== framing.dimOutside
+        ) {
+            framing = nextFraming;
+            events.fire('view.framing', { ...framing });
+        }
+    };
+
+    events.function('view.framing', () => {
+        return { ...framing };
+    });
+
+    events.on('view.setFraming', (value: Partial<FramingSettings>) => {
+        setViewFraming(value);
     });
 
     // camera.tonemapping
@@ -714,16 +768,17 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('camera.setPose', (pose: { position: Vec3, target: Vec3, fov?: number }, speed = 1) => {
-        scene.camera.setPose(pose.position, pose.target, speed);
         if (pose.fov !== undefined) {
-            scene.camera.fov = pose.fov;
-            events.fire('camera.fov', pose.fov);
+            setCameraFov(pose.fov);
         }
+        scene.camera.setPose(pose.position, pose.target, speed);
     });
 
     // hack: fire events to initialize UI
     events.fire('camera.fov', scene.camera.fov);
+    events.fire('camera.distance', getCameraDistance());
     events.fire('camera.overlay', cameraOverlay);
+    events.fire('view.framing', { ...framing });
     events.fire('view.bands', viewBands);
 
     // doc serialization

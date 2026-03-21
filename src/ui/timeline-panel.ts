@@ -252,6 +252,17 @@ class TimelinePanel extends Container {
             enabled: false
         });
 
+        const turntable = new Button({
+            class: ['button', 'text-button'],
+            text: '360'
+        });
+
+        const setTurntableStart = new Button({
+            class: ['button', 'text-button'],
+            text: 'F0',
+            enabled: false
+        });
+
         const buttonControls = new Container({
             id: 'button-controls'
         });
@@ -260,6 +271,8 @@ class TimelinePanel extends Container {
         buttonControls.append(next);
         buttonControls.append(addKey);
         buttonControls.append(removeKey);
+        buttonControls.append(turntable);
+        buttonControls.append(setTurntableStart);
 
         // settings
 
@@ -389,6 +402,14 @@ class TimelinePanel extends Container {
             events.fire('track.removeKey', frame);
         });
 
+        turntable.on('click', () => {
+            events.invoke('show.turntableSettingsDialog');
+        });
+
+        setTurntableStart.on('click', () => {
+            events.invoke('camera.turntable.setCurrentAsStart');
+        });
+
         // Helper to check if the current frame has a key
         const canDeleteKey = () => {
             const keys = events.invoke('track.keys') as number[] ?? [];
@@ -398,7 +419,9 @@ class TimelinePanel extends Container {
 
         // Update key button states
         const updateKeyButtonStates = () => {
+            const keys = events.invoke('track.keys') as number[] ?? [];
             removeKey.enabled = canDeleteKey();
+            setTurntableStart.enabled = keys.length > 1;
         };
 
         // Update button states when frame changes
@@ -431,6 +454,8 @@ class TimelinePanel extends Container {
             updateKeyButtonStates();
         });
 
+        updateKeyButtonStates();
+
         // cancel animation playback if user interacts with camera
         events.on('camera.controller', (type: string) => {
             if (events.invoke('timeline.playing')) {
@@ -456,6 +481,8 @@ class TimelinePanel extends Container {
         tooltips.register(next, tooltip('tooltip.timeline.next-frame', 'timeline.nextFrame'), 'top');
         tooltips.register(addKey, tooltip('tooltip.timeline.add-key', 'track.addKey'), 'top');
         tooltips.register(removeKey, tooltip('tooltip.timeline.remove-key', 'track.removeKey'), 'top');
+        tooltips.register(turntable, localize('tooltip.timeline.generate-turntable'), 'top');
+        tooltips.register(setTurntableStart, localize('tooltip.timeline.set-turntable-start'), 'top');
         tooltips.register(speed, localize('tooltip.timeline.frame-rate'), 'top');
         tooltips.register(frames, localize('tooltip.timeline.total-frames'), 'top');
         tooltips.register(smoothness, localize('tooltip.timeline.smoothness'), 'top');

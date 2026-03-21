@@ -29,6 +29,7 @@ import {
 
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
+import { type FramingSettings } from './framing';
 import { Picker } from './picker';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/blit-shader';
@@ -103,10 +104,12 @@ class Camera extends Element {
 
     // overridden target size
     targetSizeOverride: { width: number, height: number } = null;
+    logicalFov = 75;
 
     renderOverlays = true;
 
     updateCameraUniforms: () => void;
+    onViewFramingChanged: () => void;
 
     constructor() {
         super(ElementType.camera);
@@ -130,11 +133,12 @@ class Camera extends Element {
 
     // fov
     set fov(value: number) {
-        this.camera.fov = value;
+        this.logicalFov = value;
+        this.applyProjection();
     }
 
     get fov() {
-        return this.camera.fov;
+        return this.logicalFov;
     }
 
     // tonemapping
@@ -256,12 +260,17 @@ class Camera extends Element {
         this.lookCameraPos = null;
 
         const controls = this.scene.config.controls;
+        const prevDistance = this.distanceTween.target.distance;
 
         // clamp
         distance = Math.max(controls.minZoom, Math.min(controls.maxZoom, distance));
 
         const t = this.distanceTween;
         t.goto({ distance }, dampingFactorFactor * controls.dampingFactor);
+
+        if (distance !== prevDistance) {
+            this.scene.events.fire('camera.distance', distance * this.sceneRadius / this.fovFactor);
+        }
     }
 
     setPose(position: Vec3, target: Vec3, dampingFactorFactor: number = 1) {
@@ -354,6 +363,12 @@ class Camera extends Element {
         this.picker = new Picker(scene);
 
         scene.events.on('scene.boundChanged', this.onBoundChanged, this);
+        this.onViewFramingChanged = () => {
+            this.applyProjection();
+            this.onUpdate(0);
+            this.scene.forceRender = true;
+        };
+        scene.events.on('view.framing', this.onViewFramingChanged);
 
         // prepare camera-specific uniforms
         this.updateCameraUniforms = () => {
@@ -433,6 +448,7 @@ class Camera extends Element {
         this.picker = null;
 
         scene.events.off('scene.boundChanged', this.onBoundChanged, this);
+        scene.events.off('view.framing', this.onViewFramingChanged);
     }
 
     // handle the scene's bound changing. the camera must be configured to render
@@ -558,8 +574,8 @@ class Camera extends Element {
             splatTarget.resize(width, height);
         }
 
-        this.camera.horizontalFov = width > height;
-        this.camera.aspectRatio = width / height;
+        this.applyProjection();
+
         scene.events.fire('camera.resize', { width, height });
     }
 
@@ -597,7 +613,7 @@ class Camera extends Element {
         const { targetSize } = this;
 
         // update ortho height
-        camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / this.fovFactor * (this.fov / 90) * (camera.horizontalFov ? targetSize.height / targetSize.width : 1);
+        camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / this.fovFactor * (this.projectionFov / 90) * (camera.horizontalFov ? targetSize.height / targetSize.width : 1);
         camera.camera._updateViewProjMat();
     }
 
@@ -652,7 +668,11 @@ class Camera extends Element {
     get fovFactor() {
         // use the larger axis fov (which is always this.fov) so camera distance
         // stays constant regardless of viewport aspect ratio.
-        return Math.sin(this.fov * math.DEG_TO_RAD * 0.5);
+        return Math.sin(this.logicalFov * math.DEG_TO_RAD * 0.5);
+    }
+
+    get projectionFov() {
+        return this.camera.fov;
     }
 
     getRay(screenX: number, screenY: number, ray: Ray) {
@@ -770,6 +790,45 @@ class Camera extends Element {
     }
 
     // offscreen render mode
+
+    get projectionGateAspect() {
+        const events = this.scene?.events;
+        const framing = events?.functions.has('view.framing') ?
+            events.invoke('view.framing') as FramingSettings | undefined :
+            undefined;
+        if (framing?.enabled && framing.width > 0 && framing.height > 0) {
+            return framing.width / framing.height;
+        }
+        return this.scene.targetSize.width / this.scene.targetSize.height;
+    }
+
+    applyProjection() {
+        const targetAspect = this.targetSize.width / this.targetSize.height;
+        const gateAspect = this.projectionGateAspect;
+        const gateWide = gateAspect >= 1;
+        const logicalFovRad = this.logicalFov * math.DEG_TO_RAD;
+        const gateHorizontalFovRad = gateWide ? logicalFovRad : 2 * Math.atan(Math.tan(logicalFovRad * 0.5) * gateAspect);
+        const gateVerticalFovRad = gateWide ? 2 * Math.atan(Math.tan(logicalFovRad * 0.5) / gateAspect) : logicalFovRad;
+        const epsilon = 1e-6;
+
+        let horizontalFov: boolean;
+        let projectionFov: number;
+
+        if (targetAspect > gateAspect + epsilon) {
+            horizontalFov = false;
+            projectionFov = gateVerticalFovRad * math.RAD_TO_DEG;
+        } else if (targetAspect < gateAspect - epsilon) {
+            horizontalFov = true;
+            projectionFov = gateHorizontalFovRad * math.RAD_TO_DEG;
+        } else {
+            horizontalFov = gateWide;
+            projectionFov = this.logicalFov;
+        }
+
+        this.camera.aspectRatio = targetAspect;
+        this.camera.horizontalFov = horizontalFov;
+        this.camera.fov = projectionFov;
+    }
 
     startOffscreenMode(width: number, height: number) {
         this.targetSizeOverride = { width, height };

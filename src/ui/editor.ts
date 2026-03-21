@@ -3,6 +3,7 @@ import { Mat4, path, Vec3 } from 'playcanvas';
 
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
+import { defaultFramingSettings, type FramingSettings } from '../framing';
 import { AboutPopup } from './about-popup';
 import { BottomToolbar } from './bottom-toolbar';
 import { ColorPanel } from './color-panel';
@@ -17,11 +18,13 @@ import { Progress } from './progress';
 import { PublishSettingsDialog } from './publish-settings-dialog';
 import { RightToolbar } from './right-toolbar';
 import { ScenePanel } from './scene-panel';
+import { SequenceSettingsDialog } from './sequence-settings-dialog';
 import { ShortcutsPopup } from './shortcuts-popup';
 import { Spinner } from './spinner';
 import { StatusBar } from './status-bar';
 import { TimelinePanel } from './timeline-panel';
 import { Tooltips } from './tooltips';
+import { TurntableSettingsDialog } from './turntable-settings-dialog';
 import { VideoSettingsDialog } from './video-settings-dialog';
 import { ViewCube } from './view-cube';
 import { ViewPanel } from './view-panel';
@@ -72,6 +75,31 @@ class EditorUI {
         // canvas
         const canvas = document.createElement('canvas');
         canvas.id = 'canvas';
+
+        // framing overlay
+        const framingOverlay = document.createElement('div');
+        framingOverlay.id = 'framing-overlay';
+
+        const framingMaskTop = document.createElement('div');
+        framingMaskTop.className = 'framing-mask';
+
+        const framingMaskRight = document.createElement('div');
+        framingMaskRight.className = 'framing-mask';
+
+        const framingMaskBottom = document.createElement('div');
+        framingMaskBottom.className = 'framing-mask';
+
+        const framingMaskLeft = document.createElement('div');
+        framingMaskLeft.className = 'framing-mask';
+
+        const framingFrame = document.createElement('div');
+        framingFrame.id = 'framing-frame';
+
+        framingOverlay.appendChild(framingMaskTop);
+        framingOverlay.appendChild(framingMaskRight);
+        framingOverlay.appendChild(framingMaskBottom);
+        framingOverlay.appendChild(framingMaskLeft);
+        framingOverlay.appendChild(framingFrame);
 
         // app label
         const appLabel = new Label({
@@ -129,6 +157,7 @@ class EditorUI {
         const menu = new Menu(events);
 
         canvasContainer.dom.appendChild(canvas);
+        canvasContainer.dom.appendChild(framingOverlay);
         canvasContainer.append(appLabel);
         canvasContainer.append(cursorLabel);
         canvasContainer.append(toolsContainer);
@@ -147,6 +176,63 @@ class EditorUI {
             viewCube.update(cameraMatrix);
         });
 
+        let framingSettings: FramingSettings = { ...defaultFramingSettings };
+        const setRect = (element: HTMLElement, left: number, top: number, width: number, height: number) => {
+            element.style.left = `${left}px`;
+            element.style.top = `${top}px`;
+            element.style.width = `${width}px`;
+            element.style.height = `${height}px`;
+        };
+
+        const updateFramingOverlay = () => {
+            const containerWidth = canvasContainer.dom.clientWidth;
+            const containerHeight = canvasContainer.dom.clientHeight;
+
+            if (!framingSettings.enabled || containerWidth <= 0 || containerHeight <= 0) {
+                framingOverlay.style.display = 'none';
+                return;
+            }
+
+            const targetAspect = framingSettings.width / framingSettings.height;
+            const viewportAspect = containerWidth / containerHeight;
+
+            let frameWidth = containerWidth;
+            let frameHeight = containerHeight;
+
+            if (viewportAspect > targetAspect) {
+                frameWidth = containerHeight * targetAspect;
+            } else {
+                frameHeight = containerWidth / targetAspect;
+            }
+
+            const frameLeft = Math.round((containerWidth - frameWidth) * 0.5);
+            const frameTop = Math.round((containerHeight - frameHeight) * 0.5);
+            const roundedFrameWidth = Math.round(frameWidth);
+            const roundedFrameHeight = Math.round(frameHeight);
+            const maskOpacity = framingSettings.dimOutside ? '' : '0';
+
+            framingOverlay.style.display = 'block';
+            setRect(framingFrame, frameLeft, frameTop, roundedFrameWidth, roundedFrameHeight);
+
+            [framingMaskTop, framingMaskRight, framingMaskBottom, framingMaskLeft].forEach((mask) => {
+                mask.style.opacity = maskOpacity;
+            });
+
+            setRect(framingMaskTop, 0, 0, containerWidth, frameTop);
+            setRect(framingMaskRight, frameLeft + roundedFrameWidth, 0, Math.max(0, containerWidth - frameLeft - roundedFrameWidth), containerHeight);
+            setRect(framingMaskBottom, 0, frameTop + roundedFrameHeight, containerWidth, Math.max(0, containerHeight - frameTop - roundedFrameHeight));
+            setRect(framingMaskLeft, 0, 0, frameLeft, containerHeight);
+        };
+
+        events.on('view.framing', (value: FramingSettings) => {
+            framingSettings = { ...value };
+            updateFramingOverlay();
+        });
+
+        events.on('camera.resize', () => {
+            updateFramingOverlay();
+        });
+
         // main container
         const mainContainer = new Container({
             id: 'main-container'
@@ -155,8 +241,9 @@ class EditorUI {
         const timelinePanel = new TimelinePanel(events, tooltips);
         const dataPanel = new DataPanel(events);
         const statusBar = new StatusBar(events, tooltips);
-
-        timelinePanel.hidden = true;
+        const activePanel = events.invoke('statusBar.activePanel') as string | null;
+        timelinePanel.hidden = activePanel !== 'timeline';
+        dataPanel.hidden = activePanel !== 'splatData';
 
         mainContainer.append(canvasContainer);
         mainContainer.append(timelinePanel);
@@ -191,6 +278,12 @@ class EditorUI {
         // video settings
         const videoSettingsDialog = new VideoSettingsDialog(events);
 
+        // sequence settings
+        const sequenceSettingsDialog = new SequenceSettingsDialog(events);
+
+        // turntable settings
+        const turntableSettingsDialog = new TurntableSettingsDialog(events);
+
         // about popup
         const aboutPopup = new AboutPopup();
 
@@ -199,6 +292,8 @@ class EditorUI {
         topContainer.append(publishSettingsDialog);
         topContainer.append(imageSettingsDialog);
         topContainer.append(videoSettingsDialog);
+        topContainer.append(sequenceSettingsDialog);
+        topContainer.append(turntableSettingsDialog);
         topContainer.append(shortcutsPopup);
         topContainer.append(aboutPopup);
 
@@ -251,6 +346,72 @@ class EditorUI {
             if (imageSettings) {
                 await events.invoke('render.image', imageSettings);
             }
+        });
+
+        events.function('show.sequenceSettingsDialog', async () => {
+            const sequenceSettings = await sequenceSettingsDialog.show();
+
+            if (sequenceSettings) {
+                try {
+                    const suggested = `${sequenceSettings.zipBasename}.zip`;
+
+                    let writable;
+                    let fileHandle: FileSystemFileHandle | undefined;
+
+                    if (window.showSaveFilePicker) {
+                        fileHandle = await window.showSaveFilePicker({
+                            id: 'SuperSplatSequenceFileExport',
+                            types: [{
+                                description: 'ZIP Archive',
+                                accept: { 'application/zip': ['.zip'] }
+                            }],
+                            suggestedName: suggested
+                        });
+
+                        writable = await fileHandle.createWritable();
+                    }
+
+                    const result = await events.invoke('render.sequenceZip', sequenceSettings, writable);
+
+                    if (result === false && fileHandle?.remove) {
+                        await fileHandle.remove();
+                    }
+                } catch (error) {
+                    if (error instanceof DOMException && error.name === 'AbortError') {
+                        return;
+                    }
+
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('panel.render.failed'),
+                        message: `'${error.message ?? error}'`
+                    });
+                }
+            }
+        });
+
+        events.function('show.turntableSettingsDialog', async () => {
+            const hasPoses = ((events.invoke('camera.poses') as { frame: number }[]) ?? []).length > 0;
+
+            if (hasPoses) {
+                const result = await events.invoke('showPopup', {
+                    type: 'yesno',
+                    header: localize('popup.turntable.header'),
+                    message: localize('popup.turntable.replace-confirm')
+                });
+
+                if (result.action !== 'yes') {
+                    return false;
+                }
+            }
+
+            const turntableSettings = await turntableSettingsDialog.show();
+
+            if (turntableSettings) {
+                return events.invoke('camera.generateTurntable', turntableSettings);
+            }
+
+            return false;
         });
 
         events.function('show.videoSettingsDialog', async () => {
@@ -413,6 +574,8 @@ class EditorUI {
                 document.body.focus();
             }
         }, true);
+
+        window.addEventListener('resize', updateFramingOverlay);
     }
 }
 

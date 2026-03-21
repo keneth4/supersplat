@@ -16,7 +16,7 @@ class StatusBar extends Container {
         super(args);
 
         // Track the currently active panel
-        let activePanel = '';
+        let activePanel = 'timeline';
 
         // Toggle buttons for panels
         const timelineButton = new Button({
@@ -36,6 +36,10 @@ class StatusBar extends Container {
             splatDataButton.dom.classList[panel === 'splatData' ? 'add' : 'remove']('active');
             events.fire('statusBar.panelChanged', panel || null);
         };
+
+        events.function('statusBar.activePanel', () => {
+            return activePanel || null;
+        });
 
         timelineButton.on('click', () => {
             setActivePanel(activePanel === 'timeline' ? '' : 'timeline');
@@ -101,6 +105,8 @@ class StatusBar extends Container {
         events.on('timelinePanel.toggle', () => {
             setActivePanel(activePanel === 'timeline' ? '' : 'timeline');
         });
+
+        setActivePanel(activePanel);
 
         // Update stats from splat state
         let splat: Splat;

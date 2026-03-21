@@ -1,8 +1,11 @@
-import { Vec3 } from 'playcanvas';
+import { math, Vec3 } from 'playcanvas';
 
 import { CubicSpline } from './anim/spline';
 import { AnimTrack } from './anim-track';
+import { Camera } from './camera';
+import { AnimTrackEditOp, MultiOp, TimelineStateOp } from './edit-ops';
 import { Events } from './events';
+import { localize } from './ui/localization';
 
 type Pose = {
     name: string,
@@ -10,6 +13,12 @@ type Pose = {
     position: Vec3,
     target: Vec3,
     fov?: number
+};
+
+type TurntableSettings = {
+    elevationDeg: number,
+    totalFrames: number,
+    frameRate: number
 };
 
 /**
@@ -253,6 +262,137 @@ class CameraAnimTrack implements AnimTrack {
  */
 const registerCameraPosesEvents = (events: Events) => {
     const track = new CameraAnimTrack(events);
+    const forward = new Vec3();
+    const offset = new Vec3();
+    const turntableFov = 30;
+    const turntableOffset = new Vec3();
+
+    const approxNumber = (a: number, b: number, epsilon: number) => {
+        return Math.abs(a - b) <= epsilon;
+    };
+
+    const approxVec3 = (a: Vec3, b: Vec3, epsilon: number) => {
+        return approxNumber(a.x, b.x, epsilon) &&
+            approxNumber(a.y, b.y, epsilon) &&
+            approxNumber(a.z, b.z, epsilon);
+    };
+
+    const normalizeDegrees180 = (degrees: number) => {
+        return (((degrees + 180) % 360) + 360) % 360 - 180;
+    };
+
+    const getTurntableAngles = (pose: Pose, target: Vec3, radius: number) => {
+        turntableOffset.sub2(pose.position, target).mulScalar(1 / radius);
+
+        return {
+            azim: Math.atan2(turntableOffset.x, turntableOffset.z) * math.RAD_TO_DEG,
+            elev: -Math.asin(math.clamp(turntableOffset.y, -1, 1)) * math.RAD_TO_DEG
+        };
+    };
+
+    const getCompatibleTurntableSnapshot = (snapshot: Pose[]) => {
+        const timelineFrames = events.invoke('timeline.frames') as number;
+        const ordered = snapshot.slice().sort((a, b) => a.frame - b.frame);
+
+        if (ordered.length <= 1 || ordered.length !== timelineFrames) {
+            return null;
+        }
+
+        if (!ordered.every((pose, index) => pose.frame === index)) {
+            return null;
+        }
+
+        const baseTarget = ordered[0].target;
+        const baseFov = ordered[0].fov ?? turntableFov;
+        offset.sub2(ordered[0].position, baseTarget);
+        const baseRadius = offset.length();
+
+        if (!isFinite(baseRadius) || baseRadius <= 0) {
+            return null;
+        }
+
+        const positionEpsilon = Math.max(1e-4, baseRadius * 1e-4);
+        const baseAngles = getTurntableAngles(ordered[0], baseTarget, baseRadius);
+        const angleEpsilon = 1e-2;
+        const step = 360 / ordered.length;
+
+        for (let i = 0; i < ordered.length; i++) {
+            const pose = ordered[i];
+            const poseFov = pose.fov ?? turntableFov;
+
+            if (!approxVec3(pose.target, baseTarget, positionEpsilon)) {
+                return null;
+            }
+
+            if (!approxNumber(poseFov, baseFov, angleEpsilon)) {
+                return null;
+            }
+
+            offset.sub2(pose.position, pose.target);
+            const radius = offset.length();
+            if (!isFinite(radius) || !approxNumber(radius, baseRadius, positionEpsilon)) {
+                return null;
+            }
+
+            const angles = getTurntableAngles(pose, baseTarget, baseRadius);
+            if (!approxNumber(angles.elev, baseAngles.elev, angleEpsilon)) {
+                return null;
+            }
+
+            const expectedAzim = baseAngles.azim + step * i;
+            if (Math.abs(normalizeDegrees180(angles.azim - expectedAzim)) > angleEpsilon) {
+                return null;
+            }
+        }
+
+        return ordered;
+    };
+
+    const rotateTurntableSnapshot = (ordered: Pose[], startFrame: number) => {
+        return ordered.map((_, index) => {
+            const source = ordered[(startFrame + index) % ordered.length];
+
+            return {
+                name: source.name,
+                frame: index,
+                position: source.position.clone(),
+                target: source.target.clone(),
+                fov: source.fov
+            };
+        });
+    };
+
+    const buildTurntableSnapshot = (settings: TurntableSettings) => {
+        const pose = events.invoke('camera.getPose');
+        if (!pose) {
+            return null;
+        }
+
+        const target = new Vec3(pose.target.x, pose.target.y, pose.target.z);
+        const position = new Vec3(pose.position.x, pose.position.y, pose.position.z);
+        const radius = position.distance(target);
+
+        if (!isFinite(radius) || radius <= 0) {
+            return null;
+        }
+
+        offset.sub2(target, position);
+        const length = offset.length();
+        const startAzim = Math.atan2(-offset.x / length, -offset.z / length) * math.RAD_TO_DEG;
+        const step = 360 / settings.totalFrames;
+
+        return Array.from({ length: settings.totalFrames }, (_, frame) => {
+            Camera.calcForwardVec(forward, startAzim + step * frame, settings.elevationDeg);
+
+            return {
+                name: `camera_${frame}`,
+                frame,
+                position: target.clone().add(forward.clone().mulScalar(radius)),
+                target: target.clone(),
+                fov: turntableFov
+            };
+        });
+    };
 
     // Expose the camera animation track
     events.function('camera.animTrack', () => {
@@ -262,6 +402,78 @@ const registerCameraPosesEvents = (events: Events) => {
     // Legacy support: expose poses
     events.function('camera.poses', () => {
         return track.getPoses();
+    });
+
+    events.function('camera.generateTurntable', (settings: TurntableSettings) => {
+        if (settings.totalFrames < 1 || settings.frameRate < 1) {
+            return false;
+        }
+
+        const beforeTrack = track.snapshot();
+        const afterTrack = buildTurntableSnapshot(settings);
+
+        if (!afterTrack) {
+            return false;
+        }
+
+        const beforeTimeline = events.invoke('docSerialize.timeline');
+        const afterTimeline = {
+            ...beforeTimeline,
+            frames: settings.totalFrames,
+            frameRate: settings.frameRate,
+            frame: 0,
+            smoothness: 0
+        };
+
+        events.invoke('docDeserialize.timeline', afterTimeline);
+        track.restore(afterTrack);
+
+        events.fire('edit.add', new MultiOp([
+            new TimelineStateOp('turntableTimeline', events, beforeTimeline, afterTimeline),
+            new AnimTrackEditOp('generateTurntable', track, beforeTrack, afterTrack)
+        ]), true);
+
+        return true;
+    });
+
+    events.function('camera.turntable.canSetCurrentAsStart', () => {
+        return !!getCompatibleTurntableSnapshot(track.snapshot());
+    });
+
+    events.function('camera.turntable.setCurrentAsStart', async () => {
+        const beforeTrack = track.snapshot();
+        const compatibleTurntable = getCompatibleTurntableSnapshot(beforeTrack);
+
+        if (!compatibleTurntable) {
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('popup.turntable-start.header'),
+                message: localize('popup.turntable-start.invalid')
+            });
+            return false;
+        }
+
+        const currentFrame = events.invoke('timeline.frame') as number;
+        if (currentFrame === 0) {
+            return true;
+        }
+
+        const afterTrack = rotateTurntableSnapshot(compatibleTurntable, currentFrame);
+        const beforeTimeline = events.invoke('docSerialize.timeline');
+        const afterTimeline = {
+            ...beforeTimeline,
+            frame: 0
+        };
+
+        track.restore(afterTrack);
+        events.invoke('docDeserialize.timeline', afterTimeline);
+
+        events.fire('edit.add', new MultiOp([
+            new TimelineStateOp('turntableStartTimeline', events, beforeTimeline, afterTimeline),
+            new AnimTrackEditOp('setTurntableStart', track, beforeTrack, afterTrack)
+        ]), true);
+
+        return true;
     });
 
     // Legacy support: add pose directly
@@ -317,3 +529,4 @@ const registerCameraPosesEvents = (events: Events) => {
 };
 
 export { registerCameraPosesEvents, CameraAnimTrack, Pose };
+export type { TurntableSettings };

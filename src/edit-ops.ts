@@ -1,6 +1,7 @@
 import { Color, Mat4 } from 'playcanvas';
 
 import { AnimTrack } from './anim-track';
+import { Events } from './events';
 import { IndexRanges, sortedPredicate } from './index-ranges';
 import { Pivot } from './pivot';
 import { Scene } from './scene';
@@ -358,6 +359,28 @@ class AnimTrackEditOp {
     }
 }
 
+class TimelineStateOp {
+    name: string;
+    events: Events;
+    before: unknown;
+    after: unknown;
+
+    constructor(name: string, events: Events, before: unknown, after: unknown) {
+        this.name = name;
+        this.events = events;
+        this.before = before;
+        this.after = after;
+    }
+
+    do() {
+        this.events.invoke('docDeserialize.timeline', this.after);
+    }
+
+    undo() {
+        this.events.invoke('docDeserialize.timeline', this.before);
+    }
+}
+
 class MultiOp {
     name = 'multiOp';
     ops: EditOp[];
@@ -439,6 +462,7 @@ export {
     ColorAdjustment,
     SetSplatColorAdjustmentOp,
     AnimTrackEditOp,
+    TimelineStateOp,
     MultiOp,
     AddSplatOp,
     SplatRenameOp

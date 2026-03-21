@@ -1,6 +1,7 @@
-import { BooleanInput, Button, Container, Element, Label, NumericInput, SelectInput, VectorInput } from '@playcanvas/pcui';
+import { BooleanInput, Button, Container, Element, Label, SelectInput, VectorInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
+import { defaultFramingSettings, type FramingSettings } from '../framing';
 import { ImageSettings } from '../render';
 import { localize } from './localization';
 import sceneExport from './svg/export.svg';
@@ -125,6 +126,17 @@ class ImageSettingsDialog extends Container {
 
         // Handle custom resolution activation
 
+        const getPresetValue = (width: number, height: number) => {
+            const presets: Record<string, [number, number]> = {
+                viewport: [targetSize.width, targetSize.height],
+                HD: [1920, 1080],
+                QHD: [2560, 1440],
+                '4K': [3840, 2160]
+            };
+
+            return Object.entries(presets).find(([, value]) => value[0] === width && value[1] === height)?.[0] ?? 'custom';
+        };
+
         const updateResolution = () => {
             const widths: Record<string, number> = {
                 'viewport': targetSize.width,
@@ -172,7 +184,12 @@ class ImageSettingsDialog extends Container {
 
         // reset UI and configure for current state
         const reset = () => {
-            updateResolution();
+            const framing = (events.invoke('view.framing') as FramingSettings | undefined) ?? defaultFramingSettings;
+            const presetValue = getPresetValue(framing.width, framing.height);
+
+            presetSelect.value = presetValue;
+            resolutionRow.enabled = presetValue === 'custom';
+            resolutionValue.value = [framing.width, framing.height];
         };
 
         // function implementations
