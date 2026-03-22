@@ -413,6 +413,46 @@ const registerCameraPosesEvents = (events: Events) => {
         });
     };
 
+    const getSuggestedTurntableSettings = (): TurntableSettings => {
+        const timelineFrames = (events.invoke('timeline.frames') as number) ?? 120;
+        const timelineFrameRate = (events.invoke('timeline.frameRate') as number) ?? 24;
+        const pose = events.invoke('camera.getPose');
+
+        if (!pose) {
+            return {
+                elevationDeg: -45,
+                totalFrames: timelineFrames,
+                frameRate: timelineFrameRate
+            };
+        }
+
+        const target = new Vec3(pose.target.x, pose.target.y, pose.target.z);
+        const position = new Vec3(pose.position.x, pose.position.y, pose.position.z);
+        const radius = position.distance(target);
+
+        if (!isFinite(radius) || radius <= 0) {
+            return {
+                elevationDeg: -45,
+                totalFrames: timelineFrames,
+                frameRate: timelineFrameRate
+            };
+        }
+
+        const { elev } = getTurntableAngles({
+            name: 'camera',
+            frame: 0,
+            position,
+            target,
+            fov: pose.fov
+        }, target, radius);
+
+        return {
+            elevationDeg: isFinite(elev) ? Math.round(elev) : -45,
+            totalFrames: timelineFrames,
+            frameRate: timelineFrameRate
+        };
+    };
+
     // Expose the camera animation track
     events.function('camera.animTrack', () => {
         return track;
@@ -421,6 +461,10 @@ const registerCameraPosesEvents = (events: Events) => {
     // Legacy support: expose poses
     events.function('camera.poses', () => {
         return track.getPoses();
+    });
+
+    events.function('camera.turntable.suggestSettings', () => {
+        return getSuggestedTurntableSettings();
     });
 
     events.function('camera.generateTurntable', (settings: TurntableSettings) => {

@@ -14,7 +14,7 @@ const createSvg = (svgString: string, args = {}) => {
 };
 
 class TurntableSettingsDialog extends Container {
-    show: () => Promise<TurntableSettings | null>;
+    show: (initialSettings?: TurntableSettings) => Promise<TurntableSettings | null>;
     hide: () => void;
     destroy: () => void;
 
@@ -68,6 +68,8 @@ class TurntableSettingsDialog extends Container {
             class: 'select',
             defaultValue: '24',
             options: [
+                { v: '1', t: '1 fps' },
+                { v: '6', t: '6 fps' },
                 { v: '12', t: '12 fps' },
                 { v: '15', t: '15 fps' },
                 { v: '24', t: '24 fps' },
@@ -118,14 +120,14 @@ class TurntableSettingsDialog extends Container {
             }
         };
 
-        const reset = () => {
-            elevationInput.value = -45;
-            framesInput.value = 120;
-            frameRateSelect.value = '24';
+        const setValues = (settings?: TurntableSettings) => {
+            elevationInput.value = settings?.elevationDeg ?? -45;
+            framesInput.value = settings?.totalFrames ?? 120;
+            frameRateSelect.value = (settings?.frameRate ?? 24).toString();
         };
 
-        this.show = () => {
-            reset();
+        this.show = (initialSettings?: TurntableSettings) => {
+            setValues(initialSettings);
 
             this.hidden = false;
             document.addEventListener('keydown', keydown);

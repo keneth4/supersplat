@@ -437,23 +437,28 @@ class EditorUI {
         });
 
         events.function('show.turntableSettingsDialog', async () => {
-            const hasPoses = ((events.invoke('camera.poses') as { frame: number }[]) ?? []).length > 0;
-
-            if (hasPoses) {
-                const result = await events.invoke('showPopup', {
-                    type: 'yesno',
-                    header: localize('popup.turntable.header'),
-                    message: localize('popup.turntable.replace-confirm')
-                });
-
-                if (result.action !== 'yes') {
-                    return false;
-                }
-            }
-
-            const turntableSettings = await turntableSettingsDialog.show();
+            const initialSettings = events.invoke('camera.turntable.suggestSettings') as {
+                elevationDeg: number,
+                totalFrames: number,
+                frameRate: number
+            } | undefined;
+            const turntableSettings = await turntableSettingsDialog.show(initialSettings);
 
             if (turntableSettings) {
+                const hasPoses = ((events.invoke('camera.poses') as { frame: number }[]) ?? []).length > 0;
+
+                if (hasPoses) {
+                    const result = await events.invoke('showPopup', {
+                        type: 'yesno',
+                        header: localize('popup.turntable.header'),
+                        message: localize('popup.turntable.replace-confirm')
+                    });
+
+                    if (result.action !== 'yes') {
+                        return false;
+                    }
+                }
+
                 return events.invoke('camera.generateTurntable', turntableSettings);
             }
 
