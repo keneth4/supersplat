@@ -151,6 +151,16 @@ type ImportFile = {
     handle?: FileSystemFileHandle;
 };
 
+const food360ImportPickerTypes = [
+    filePickerTypes.ply,
+    filePickerTypes.compressedPly,
+    filePickerTypes.splat,
+    filePickerTypes.sog,
+    filePickerTypes.lcc,
+    filePickerTypes.ksplat,
+    filePickerTypes.spz
+];
+
 const vec = new Vec3();
 
 // load inria camera poses from json file
@@ -294,9 +304,6 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 
             const model = await scene.assetLoader.load(filename, fileSystem, animationFrame);
             await scene.add(model);
-            if (!animationFrame) {
-                events.fire('camera.reset');
-            }
             return model;
         } catch (error) {
             const displayName = files[0]?.filename ?? 'unknown';
@@ -366,28 +373,113 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
         return importFiles(files, animationFrame);
     });
 
-    // create a file selector element as fallback when showOpenFilePicker isn't available
-    let fileSelector: HTMLInputElement;
-    if (!window.showOpenFilePicker) {
-        fileSelector = document.createElement('input');
-        fileSelector.setAttribute('id', 'file-selector');
-        fileSelector.setAttribute('type', 'file');
-        fileSelector.setAttribute('accept', '.ply,.splat,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt,.ksplat,.spz');
-        fileSelector.setAttribute('multiple', 'true');
+    const filesFromList = (fileList: FileList | null): ImportFile[] => {
+        const files: ImportFile[] = [];
+        if (!fileList) {
+            return files;
+        }
 
-        fileSelector.onchange = () => {
-            const files = [];
-            for (let i = 0; i < fileSelector.files.length; i++) {
-                const file = fileSelector.files[i];
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            files.push({
+                filename: file.name,
+                contents: file
+            });
+        }
+
+        return files;
+    };
+
+    const createFileSelector = (id: string, accept: string) => {
+        const selector = document.createElement('input');
+        selector.setAttribute('id', id);
+        selector.setAttribute('type', 'file');
+        selector.setAttribute('accept', accept);
+        selector.setAttribute('multiple', 'true');
+        document.body.append(selector);
+        return selector;
+    };
+
+    const showFallbackPicker = (selector: HTMLInputElement) => {
+        return new Promise<ImportFile[] | null>((resolve) => {
+            const cleanup = (onChange: () => void, onCancel: () => void) => {
+                selector.removeEventListener('change', onChange);
+                selector.removeEventListener('cancel', onCancel);
+            };
+
+            let onCancel = () => {};
+
+            const onChange = () => {
+                cleanup(onChange, onCancel);
+                const files = filesFromList(selector.files);
+                selector.value = '';
+                resolve(files.length > 0 ? files : null);
+            };
+
+            onCancel = () => {
+                cleanup(onChange, onCancel);
+                selector.value = '';
+                resolve(null);
+            };
+
+            selector.addEventListener('change', onChange, { once: true });
+            selector.addEventListener('cancel', onCancel, { once: true });
+            selector.click();
+        });
+    };
+
+    const pickFiles = async (id: string, types: FilePickerAcceptType[], selector?: HTMLInputElement) => {
+        if (selector) {
+            return showFallbackPicker(selector);
+        }
+
+        try {
+            const handles = await window.showOpenFilePicker({
+                id,
+                multiple: true,
+                excludeAcceptAllOption: false,
+                types
+            });
+
+            const files: ImportFile[] = [];
+            for (let i = 0; i < handles.length; i++) {
                 files.push({
-                    filename: file.name,
-                    contents: file
+                    filename: handles[i].name,
+                    contents: await handles[i].getFile(),
+                    handle: handles[i]
                 });
             }
-            importFiles(files);
-            fileSelector.value = '';
-        };
-        document.body.append(fileSelector);
+
+            return files;
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error(error);
+            }
+            return null;
+        }
+    };
+
+    const isFood360ImportSelection = (files: ImportFile[]) => {
+        const filenames = files.map(f => f.filename.toLowerCase());
+
+        if (filenames.length === 0) {
+            return false;
+        }
+
+        if (isSog(filenames) || isLcc(filenames)) {
+            return true;
+        }
+
+        return filenames.length === 1 &&
+            ['.ply', '.splat', '.sog', '.ksplat', '.spz'].some(ext => filenames[0].endsWith(ext));
+    };
+
+    // create file selector elements as fallback when showOpenFilePicker isn't available
+    let fileSelector: HTMLInputElement;
+    let food360FileSelector: HTMLInputElement;
+    if (!window.showOpenFilePicker) {
+        fileSelector = createFileSelector('file-selector', '.ply,.splat,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt,.ksplat,.spz');
+        food360FileSelector = createFileSelector('food360-file-selector', '.ply,.splat,meta.json,.webp,.sog,.lcc,.bin,.ksplat,.spz');
     }
 
     // create the file drag & drop handler
@@ -420,43 +512,40 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
         return getSplats().length === 0;
     });
 
+    events.function('scene.pickFood360Files', async () => {
+        const files = await pickFiles('SuperSplatFood360Import', food360ImportPickerTypes, food360FileSelector);
+
+        if (!files) {
+            return null;
+        }
+
+        if (!isFood360ImportSelection(files)) {
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('popup.food360.header'),
+                message: localize('popup.food360.invalid-file-selection')
+            });
+            return null;
+        }
+
+        return files;
+    });
+
     events.function('scene.import', async () => {
-        if (fileSelector) {
-            fileSelector.click();
-        } else {
-            try {
-                const handles = await window.showOpenFilePicker({
-                    id: 'SuperSplatFileImport',
-                    multiple: true,
-                    excludeAcceptAllOption: false,
-                    types: [
-                        allImportTypes,
-                        filePickerTypes.ply,
-                        filePickerTypes.compressedPly,
-                        filePickerTypes.splat,
-                        filePickerTypes.sog,
-                        filePickerTypes.lcc,
-                        filePickerTypes.ksplat,
-                        filePickerTypes.spz,
-                        filePickerTypes.indexTxt
-                    ]
-                });
+        const files = await pickFiles('SuperSplatFileImport', [
+            allImportTypes,
+            filePickerTypes.ply,
+            filePickerTypes.compressedPly,
+            filePickerTypes.splat,
+            filePickerTypes.sog,
+            filePickerTypes.lcc,
+            filePickerTypes.ksplat,
+            filePickerTypes.spz,
+            filePickerTypes.indexTxt
+        ], fileSelector);
 
-                const files = [];
-                for (let i = 0; i < handles.length; i++) {
-                    files.push({
-                        filename: handles[i].name,
-                        contents: await handles[i].getFile()
-                    });
-                }
-
-                importFiles(files);
-
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error(error);
-                }
-            }
+        if (files) {
+            return importFiles(files);
         }
     });
 
@@ -589,3 +678,4 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 };
 
 export { initFileHandler, ExportType, SceneExportOptions };
+export type { ImportFile };

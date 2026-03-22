@@ -49,6 +49,66 @@
                     font-size: 11px;
                     width: 42px;
                 }
+
+                &.timeline-action-button {
+                    font-family: inherit;
+                    font-size: 11px;
+                    width: auto;
+                    min-width: 52px;
+                    padding: 0 8px;
+
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
+
+                    .timeline-action-icon {
+                        width: 12px;
+                        height: 12px;
+                        flex-shrink: 0;
+                        color: currentColor;
+                    }
+
+                    .timeline-action-label {
+                        line-height: 1;
+                    }
+                }
+            }
+
+            > .timeline-distance-control {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+
+                min-width: 0;
+                height: 24px;
+                margin: 1px;
+                padding: 0 6px;
+
+                border: 1px solid $bcg-light;
+                border-radius: 4px;
+                background-color: $bcg-dark;
+
+                .timeline-action-icon {
+                    width: 12px;
+                    height: 12px;
+                    flex-shrink: 0;
+                    color: currentColor;
+                }
+
+                > .pcui-numeric-input {
+                    width: 78px;
+                    margin: 0;
+                    min-height: 0;
+
+                    input {
+                        text-align: left;
+                    }
+                }
+
+                &.disabled {
+                    opacity: 0.5;
+                }
             }
         }
 

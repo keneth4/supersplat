@@ -9,6 +9,7 @@ import arrowSvg from './svg/arrow.svg';
 import collapseSvg from './svg/collapse.svg';
 import selectDelete from './svg/delete.svg';
 import sceneExport from './svg/export.svg';
+import food360Svg from './svg/food360.svg';
 import sceneImport from './svg/import.svg';
 import sceneNew from './svg/new.svg';
 import sceneOpen from './svg/open.svg';
@@ -192,6 +193,12 @@ class Menu extends Container {
             icon: createSvg(sceneImport),
             onSelect: async () => {
                 await events.invoke('scene.import');
+            }
+        }, {
+            text: localize('menu.file.food360', { ellipsis: true }),
+            icon: createSvg(food360Svg),
+            onSelect: async () => {
+                await events.invoke('show.food360Wizard');
             }
         }, {
             text: localize('menu.file.export'),

@@ -362,6 +362,25 @@ const registerCameraPosesEvents = (events: Events) => {
         });
     };
 
+    const getTurntableRadius = (ordered: Pose[]) => {
+        offset.sub2(ordered[0].position, ordered[0].target);
+        return offset.length();
+    };
+
+    const rescaleTurntableSnapshot = (ordered: Pose[], radius: number) => {
+        return ordered.map((pose) => {
+            offset.sub2(pose.position, pose.target);
+
+            return {
+                name: pose.name,
+                frame: pose.frame,
+                position: pose.target.clone().add(offset.normalize().mulScalar(radius)),
+                target: pose.target.clone(),
+                fov: pose.fov
+            };
+        });
+    };
+
     const buildTurntableSnapshot = (settings: TurntableSettings) => {
         const pose = events.invoke('camera.getPose');
         if (!pose) {
@@ -438,6 +457,36 @@ const registerCameraPosesEvents = (events: Events) => {
 
     events.function('camera.turntable.canSetCurrentAsStart', () => {
         return !!getCompatibleTurntableSnapshot(track.snapshot());
+    });
+
+    events.function('camera.turntable.distance', () => {
+        const compatibleTurntable = getCompatibleTurntableSnapshot(track.snapshot());
+        return compatibleTurntable ? getTurntableRadius(compatibleTurntable) : null;
+    });
+
+    events.function('camera.turntable.setDistance', (distance: number) => {
+        if (!isFinite(distance) || distance <= 0) {
+            return false;
+        }
+
+        const beforeTrack = track.snapshot();
+        const compatibleTurntable = getCompatibleTurntableSnapshot(beforeTrack);
+
+        if (!compatibleTurntable) {
+            return false;
+        }
+
+        const currentDistance = getTurntableRadius(compatibleTurntable);
+        if (approxNumber(currentDistance, distance, Math.max(1e-6, currentDistance * 1e-6))) {
+            return true;
+        }
+
+        const afterTrack = rescaleTurntableSnapshot(compatibleTurntable, distance);
+        track.restore(afterTrack);
+
+        events.fire('edit.add', new AnimTrackEditOp('setTurntableDistance', track, beforeTrack, afterTrack), true);
+
+        return true;
     });
 
     events.function('camera.turntable.setCurrentAsStart', async () => {

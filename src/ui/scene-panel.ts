@@ -3,6 +3,7 @@ import { Container, Element, Label } from '@playcanvas/pcui';
 import { Events } from '../events';
 import { localize } from './localization';
 import { SplatList } from './splat-list';
+import food360Svg from './svg/food360.svg';
 import sceneImportSvg from './svg/import.svg';
 import sceneNewSvg from './svg/new.svg';
 import soloSvg from './svg/solo.svg';
@@ -65,6 +66,11 @@ class ScenePanel extends Container {
         });
         sceneImport.dom.appendChild(createSvg(sceneImportSvg));
 
+        const food360 = new Container({
+            class: 'panel-header-button'
+        });
+        food360.dom.appendChild(createSvg(food360Svg));
+
         const sceneNew = new Container({
             class: 'panel-header-button'
         });
@@ -74,10 +80,15 @@ class ScenePanel extends Container {
         sceneHeader.append(sceneLabel);
         sceneHeader.append(soloToggle);
         sceneHeader.append(sceneImport);
+        sceneHeader.append(food360);
         sceneHeader.append(sceneNew);
 
         sceneImport.on('click', async () => {
             await events.invoke('scene.import');
+        });
+
+        food360.on('click', async () => {
+            await events.invoke('show.food360Wizard');
         });
 
         sceneNew.on('click', () => {
@@ -86,6 +97,7 @@ class ScenePanel extends Container {
 
         tooltips.register(soloToggle, localize('tooltip.scene.solo'), 'top');
         tooltips.register(sceneImport, 'Import Scene', 'top');
+        tooltips.register(food360, localize('tooltip.scene.food360'), 'top');
         tooltips.register(sceneNew, 'New Scene', 'top');
 
         const splatList = new SplatList(events);

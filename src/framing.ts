@@ -6,7 +6,7 @@ type FramingSettings = {
 };
 
 const defaultFramingSettings: FramingSettings = {
-    enabled: true,
+    enabled: false,
     width: 500,
     height: 500,
     dimOutside: true

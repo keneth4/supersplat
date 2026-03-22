@@ -1,9 +1,20 @@
-import { Button, Container, NumericInput, SelectInput } from '@playcanvas/pcui';
+import { Button, Container, Element, NumericInput, SelectInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { ShortcutManager } from '../shortcut-manager';
 import { localize } from './localization';
+import turntableDistanceSvg from './svg/turntable-distance.svg';
+import turntableStartSvg from './svg/turntable-start.svg';
+import turntableSvg from './svg/turntable.svg';
 import { Tooltips } from './tooltips';
+
+const createSvg = (svgString: string, args = {}) => {
+    const decodedStr = decodeURIComponent(svgString.substring('data:image/svg+xml,'.length));
+    return new Element({
+        dom: new DOMParser().parseFromString(decodedStr, 'image/svg+xml').documentElement,
+        ...args
+    });
+};
 
 class Ticks extends Container {
     constructor(events: Events, tooltips: Tooltips, args = {}) {
@@ -253,15 +264,46 @@ class TimelinePanel extends Container {
         });
 
         const turntable = new Button({
-            class: ['button', 'text-button'],
-            text: '360'
+            class: ['button', 'timeline-action-button']
         });
 
         const setTurntableStart = new Button({
-            class: ['button', 'text-button'],
-            text: 'F0',
+            class: ['button', 'timeline-action-button'],
             enabled: false
         });
+
+        const turntableDistance = new Container({
+            class: 'timeline-distance-control'
+        });
+
+        const turntableDistanceIcon = createSvg(turntableDistanceSvg, {
+            class: 'timeline-action-icon'
+        });
+
+        const turntableDistanceInput = new NumericInput({
+            class: 'timeline-distance-input',
+            min: 1e-4,
+            max: 1000000,
+            precision: 4,
+            step: 1,
+            stepPrecision: 0.1,
+            value: 0,
+            enabled: false
+        });
+
+        const buildActionButton = (button: Button, iconSvg: string, labelText: string) => {
+            button.dom.textContent = '';
+            button.dom.appendChild(createSvg(iconSvg, { class: 'timeline-action-icon' }).dom);
+            const label = document.createElement('span');
+            label.className = 'timeline-action-label';
+            label.textContent = labelText;
+            button.dom.appendChild(label);
+        };
+
+        buildActionButton(turntable, turntableSvg, '360');
+        buildActionButton(setTurntableStart, turntableStartSvg, 'F0');
+        turntableDistance.append(turntableDistanceIcon);
+        turntableDistance.append(turntableDistanceInput);
 
         const buttonControls = new Container({
             id: 'button-controls'
@@ -273,6 +315,7 @@ class TimelinePanel extends Container {
         buttonControls.append(removeKey);
         buttonControls.append(turntable);
         buttonControls.append(setTurntableStart);
+        buttonControls.append(turntableDistance);
 
         // settings
 
@@ -417,44 +460,74 @@ class TimelinePanel extends Container {
             return keys.includes(frame);
         };
 
-        // Update key button states
-        const updateKeyButtonStates = () => {
-            const keys = events.invoke('track.keys') as number[] ?? [];
+        function setTurntableDistanceValue(distance: number | null) {
+            if (distance === null) {
+                turntableDistanceInput.value = 0;
+                return;
+            }
+
+            turntableDistanceInput.value = distance;
+        }
+
+        // Update timeline action states
+        function updateTimelineActionStates() {
             removeKey.enabled = canDeleteKey();
-            setTurntableStart.enabled = keys.length > 1;
-        };
+            const turntableDistanceValue = events.invoke('camera.turntable.distance') as number | null;
+            const hasCompatibleTurntable = turntableDistanceValue !== null;
+
+            setTurntableStart.enabled = hasCompatibleTurntable;
+            turntableDistanceInput.enabled = hasCompatibleTurntable;
+            turntableDistance.dom.classList.toggle('disabled', !hasCompatibleTurntable);
+            setTurntableDistanceValue(turntableDistanceValue);
+        }
+
+        turntableDistanceInput.on('change', (value: number) => {
+            if (!isFinite(value) || value <= 0) {
+                updateTimelineActionStates();
+                return;
+            }
+
+            const changed = events.invoke('camera.turntable.setDistance', value) as boolean;
+            if (!changed) {
+                updateTimelineActionStates();
+            }
+        });
 
         // Update button states when frame changes
         events.on('timeline.frame', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
+        });
+
+        events.on('timeline.frames', () => {
+            updateTimelineActionStates();
         });
 
         // Update button states when track keys change
         events.on('track.keyAdded', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
         events.on('track.keyRemoved', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
         events.on('track.keyMoved', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
         events.on('track.keyUpdated', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
         events.on('track.keysLoaded', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
         events.on('track.keysCleared', () => {
-            updateKeyButtonStates();
+            updateTimelineActionStates();
         });
 
-        updateKeyButtonStates();
+        updateTimelineActionStates();
 
         // cancel animation playback if user interacts with camera
         events.on('camera.controller', (type: string) => {
@@ -483,6 +556,7 @@ class TimelinePanel extends Container {
         tooltips.register(removeKey, tooltip('tooltip.timeline.remove-key', 'track.removeKey'), 'top');
         tooltips.register(turntable, localize('tooltip.timeline.generate-turntable'), 'top');
         tooltips.register(setTurntableStart, localize('tooltip.timeline.set-turntable-start'), 'top');
+        tooltips.register(turntableDistance, localize('tooltip.timeline.set-turntable-distance'), 'top');
         tooltips.register(speed, localize('tooltip.timeline.frame-rate'), 'top');
         tooltips.register(frames, localize('tooltip.timeline.total-frames'), 'top');
         tooltips.register(smoothness, localize('tooltip.timeline.smoothness'), 'top');

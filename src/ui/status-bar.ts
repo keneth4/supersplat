@@ -16,7 +16,7 @@ class StatusBar extends Container {
         super(args);
 
         // Track the currently active panel
-        let activePanel = 'timeline';
+        let activePanel = '';
 
         // Toggle buttons for panels
         const timelineButton = new Button({
@@ -38,6 +38,11 @@ class StatusBar extends Container {
         };
 
         events.function('statusBar.activePanel', () => {
+            return activePanel || null;
+        });
+
+        events.function('statusBar.setActivePanel', (panel: string | null) => {
+            setActivePanel(panel ?? '');
             return activePanel || null;
         });
 

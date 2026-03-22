@@ -8,6 +8,7 @@ import { AboutPopup } from './about-popup';
 import { BottomToolbar } from './bottom-toolbar';
 import { ColorPanel } from './color-panel';
 import { ExportPopup } from './export-popup';
+import { Food360WizardDialog } from './food360-wizard-dialog';
 import { ImageSettingsDialog } from './image-settings-dialog';
 import { localize, localizeInit } from './localization';
 import { Menu } from './menu';
@@ -284,6 +285,9 @@ class EditorUI {
         // turntable settings
         const turntableSettingsDialog = new TurntableSettingsDialog(events);
 
+        // food 360 wizard
+        const food360WizardDialog = new Food360WizardDialog(events);
+
         // about popup
         const aboutPopup = new AboutPopup();
 
@@ -294,6 +298,7 @@ class EditorUI {
         topContainer.append(videoSettingsDialog);
         topContainer.append(sequenceSettingsDialog);
         topContainer.append(turntableSettingsDialog);
+        topContainer.append(food360WizardDialog);
         topContainer.append(shortcutsPopup);
         topContainer.append(aboutPopup);
 
@@ -346,6 +351,47 @@ class EditorUI {
             if (imageSettings) {
                 await events.invoke('render.image', imageSettings);
             }
+        });
+
+        events.function('show.food360Wizard', async () => {
+            const food360Settings = await food360WizardDialog.show();
+
+            if (!food360Settings) {
+                return false;
+            }
+
+            if (!events.invoke('scene.empty')) {
+                if (!await events.invoke('doc.new')) {
+                    return false;
+                }
+            } else {
+                events.invoke('doc.resetScene');
+            }
+
+            const imported = await events.invoke('import', food360Settings.files, false) as unknown[] | undefined;
+
+            if (!imported?.length) {
+                return false;
+            }
+
+            events.fire('camera.reset');
+            events.fire('camera.setFov', food360Settings.fov);
+            events.fire('view.setFraming', {
+                enabled: food360Settings.showFrame,
+                width: food360Settings.width,
+                height: food360Settings.height,
+                dimOutside: true
+            });
+            events.invoke('statusBar.setActivePanel', 'timeline');
+            events.fire('timeline.setFrameRate', food360Settings.frameRate);
+            events.fire('timeline.setFrames', food360Settings.totalFrames);
+            events.fire('timeline.setFrame', 0);
+
+            return events.invoke('camera.generateTurntable', {
+                elevationDeg: food360Settings.elevationDeg,
+                totalFrames: food360Settings.totalFrames,
+                frameRate: food360Settings.frameRate
+            });
         });
 
         events.function('show.sequenceSettingsDialog', async () => {

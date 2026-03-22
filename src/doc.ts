@@ -208,6 +208,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         return true;
     });
 
+    events.function('doc.resetScene', () => {
+        resetScene();
+        return true;
+    });
+
     // handle document file being dropped
     // NOTE: on chrome it's possible to get the FileSystemFileHandle from the DataTransferItem
     // (which would result in more seamless user experience), but this is not yet supported in
