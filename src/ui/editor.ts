@@ -360,18 +360,26 @@ class EditorUI {
                 return false;
             }
 
-            if (!events.invoke('scene.empty')) {
-                if (!await events.invoke('doc.new')) {
+            const useCurrentScene = food360Settings.files.length === 0 && !events.invoke('scene.empty');
+
+            if (!useCurrentScene) {
+                if (!food360Settings.files.length) {
                     return false;
                 }
-            } else {
-                events.invoke('doc.resetScene');
-            }
 
-            const imported = await events.invoke('import', food360Settings.files, false) as unknown[] | undefined;
+                if (!events.invoke('scene.empty')) {
+                    if (!await events.invoke('doc.new')) {
+                        return false;
+                    }
+                } else {
+                    events.invoke('doc.resetScene');
+                }
 
-            if (!imported?.length) {
-                return false;
+                const imported = await events.invoke('import', food360Settings.files, false) as unknown[] | undefined;
+
+                if (!imported?.length) {
+                    return false;
+                }
             }
 
             events.fire('camera.reset');
@@ -390,7 +398,8 @@ class EditorUI {
             return events.invoke('camera.generateTurntable', {
                 elevationDeg: food360Settings.elevationDeg,
                 totalFrames: food360Settings.totalFrames,
-                frameRate: food360Settings.frameRate
+                frameRate: food360Settings.frameRate,
+                fov: food360Settings.fov
             });
         });
 
@@ -440,7 +449,8 @@ class EditorUI {
             const initialSettings = events.invoke('camera.turntable.suggestSettings') as {
                 elevationDeg: number,
                 totalFrames: number,
-                frameRate: number
+                frameRate: number,
+                fov: number
             } | undefined;
             const turntableSettings = await turntableSettingsDialog.show(initialSettings);
 

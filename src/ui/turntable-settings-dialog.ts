@@ -84,10 +84,23 @@ class TurntableSettingsDialog extends Container {
         frameRateRow.append(frameRateLabel);
         frameRateRow.append(frameRateSelect);
 
+        const fovLabel = new Label({ class: 'label', text: localize('popup.turntable.fov') });
+        const fovInput = new NumericInput({
+            class: 'numeric-input',
+            min: 10,
+            max: 120,
+            precision: 0,
+            value: 30
+        });
+        const fovRow = new Container({ class: 'row' });
+        fovRow.append(fovLabel);
+        fovRow.append(fovInput);
+
         const content = new Container({ id: 'content' });
         content.append(elevationRow);
         content.append(framesRow);
         content.append(frameRateRow);
+        content.append(fovRow);
 
         const footer = new Container({ id: 'footer' });
         const cancelButton = new Button({
@@ -124,6 +137,7 @@ class TurntableSettingsDialog extends Container {
             elevationInput.value = settings?.elevationDeg ?? -45;
             framesInput.value = settings?.totalFrames ?? 120;
             frameRateSelect.value = (settings?.frameRate ?? 24).toString();
+            fovInput.value = settings?.fov ?? 30;
         };
 
         this.show = (initialSettings?: TurntableSettings) => {
@@ -142,7 +156,8 @@ class TurntableSettingsDialog extends Container {
                     resolve({
                         elevationDeg: elevationInput.value,
                         totalFrames: framesInput.value,
-                        frameRate: parseInt(frameRateSelect.value, 10)
+                        frameRate: parseInt(frameRateSelect.value, 10),
+                        fov: fovInput.value
                     });
                 };
             }).finally(() => {

@@ -183,10 +183,15 @@ class Food360WizardDialog extends Container {
         let onCancel: () => void;
         let onStart: () => void;
 
+        const hasReusableScene = () => {
+            return ((events.invoke('scene.splats') as unknown[] | undefined) ?? []).length > 0;
+        };
+
         const updateSelectedFiles = (files: ImportFile[] | null) => {
             selectedFiles = files;
-            fileValue.text = summarizeFiles(files ?? []);
-            startButton.enabled = !!files?.length;
+            fileValue.text = files?.length ? summarizeFiles(files) :
+                (hasReusableScene() ? localize('popup.food360.current-scene') : localize('popup.food360.no-file'));
+            startButton.enabled = !!files?.length || hasReusableScene();
         };
 
         browseButton.on('click', async () => {

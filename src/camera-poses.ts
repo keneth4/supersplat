@@ -18,7 +18,8 @@ type Pose = {
 type TurntableSettings = {
     elevationDeg: number,
     totalFrames: number,
-    frameRate: number
+    frameRate: number,
+    fov: number
 };
 
 /**
@@ -399,6 +400,7 @@ const registerCameraPosesEvents = (events: Events) => {
         const length = offset.length();
         const startAzim = Math.atan2(-offset.x / length, -offset.z / length) * math.RAD_TO_DEG;
         const step = 360 / settings.totalFrames;
+        const fov = isFinite(settings.fov) && settings.fov > 0 ? settings.fov : (pose.fov ?? turntableFov);
 
         return Array.from({ length: settings.totalFrames }, (_, frame) => {
             Camera.calcForwardVec(forward, startAzim + step * frame, settings.elevationDeg);
@@ -408,7 +410,7 @@ const registerCameraPosesEvents = (events: Events) => {
                 frame,
                 position: target.clone().add(forward.clone().mulScalar(radius)),
                 target: target.clone(),
-                fov: turntableFov
+                fov
             };
         });
     };
@@ -417,12 +419,14 @@ const registerCameraPosesEvents = (events: Events) => {
         const timelineFrames = (events.invoke('timeline.frames') as number) ?? 120;
         const timelineFrameRate = (events.invoke('timeline.frameRate') as number) ?? 24;
         const pose = events.invoke('camera.getPose');
+        const currentFov = (events.invoke('camera.fov') as number) ?? turntableFov;
 
         if (!pose) {
             return {
                 elevationDeg: -45,
                 totalFrames: timelineFrames,
-                frameRate: timelineFrameRate
+                frameRate: timelineFrameRate,
+                fov: isFinite(currentFov) && currentFov > 0 ? currentFov : turntableFov
             };
         }
 
@@ -434,7 +438,8 @@ const registerCameraPosesEvents = (events: Events) => {
             return {
                 elevationDeg: -45,
                 totalFrames: timelineFrames,
-                frameRate: timelineFrameRate
+                frameRate: timelineFrameRate,
+                fov: isFinite(pose.fov) && pose.fov > 0 ? pose.fov : (isFinite(currentFov) && currentFov > 0 ? currentFov : turntableFov)
             };
         }
 
@@ -449,7 +454,8 @@ const registerCameraPosesEvents = (events: Events) => {
         return {
             elevationDeg: isFinite(elev) ? Math.round(elev) : -45,
             totalFrames: timelineFrames,
-            frameRate: timelineFrameRate
+            frameRate: timelineFrameRate,
+            fov: isFinite(pose.fov) && pose.fov > 0 ? pose.fov : (isFinite(currentFov) && currentFov > 0 ? currentFov : turntableFov)
         };
     };
 
@@ -468,7 +474,7 @@ const registerCameraPosesEvents = (events: Events) => {
     });
 
     events.function('camera.generateTurntable', (settings: TurntableSettings) => {
-        if (settings.totalFrames < 1 || settings.frameRate < 1) {
+        if (settings.totalFrames < 1 || settings.frameRate < 1 || !isFinite(settings.fov) || settings.fov <= 0) {
             return false;
         }
 
